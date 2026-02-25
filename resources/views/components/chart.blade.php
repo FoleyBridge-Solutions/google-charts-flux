@@ -26,6 +26,7 @@
         loaderConfig: @js($loaderConfig()),
         wireModelProp: @js($wireModelProp),
         loading: @js($loading),
+        otherBreakdown: @js($otherBreakdown),
     })"
     x-on:google-chart-update.window="
         if ($event.detail.chartId === '{{ $chartId }}') {

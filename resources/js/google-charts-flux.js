@@ -112,6 +112,20 @@
     };
 
     // =========================================================================
+    // Chart Types Supporting HTML Tooltips
+    // =========================================================================
+
+    /**
+     * Chart types that support HTML tooltips via { tooltip: { isHtml: true } }.
+     *
+     * @type {Set<string>}
+     */
+    const HTML_TOOLTIP_TYPES = new Set([
+        'area', 'bar', 'calendar', 'candlestick', 'column', 'combo',
+        'line', 'pie', 'donut', 'sankey', 'scatter', 'timeline',
+    ]);
+
+    // =========================================================================
     // Utility Functions
     // =========================================================================
 
@@ -190,6 +204,18 @@
         return dataTable;
     }
 
+    /**
+     * Escape a string for safe insertion into HTML.
+     *
+     * @param {string} str - Raw string to escape
+     * @returns {string} HTML-escaped string
+     */
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
     // =========================================================================
     // Alpine.js Component: googleChart
     // =========================================================================
@@ -211,6 +237,9 @@
      * @param {Object} config.loaderConfig  - Google Charts loader config
      * @param {string} config.wireModelProp - Livewire property name for wire:model
      * @param {string} config.loading       - Loading display type: 'skeleton', 'spinner', 'none'
+     * @param {Object} [config.otherBreakdown]         - "Other" slice breakdown data for tooltip mini-chart
+     * @param {string} config.otherBreakdown.label      - Label of the "Other" row (must match a DataTable row label)
+     * @param {Array<[string, number]>} config.otherBreakdown.items - Breakdown items as [label, value] pairs
      * @returns {Object} Alpine.js component data
      */
     function googleChartComponent(config) {
@@ -238,6 +267,7 @@
 
                     await GoogleChartsLoader.load(config.loaderConfig);
                     this.buildDataTable();
+                    await this.injectOtherTooltip();
                     this.createChart();
                     this.draw();
                     this.setupResize();
@@ -295,6 +325,101 @@
                     this.dataTable = columnsRowsToDataTable(config.columns, config.rows || []);
                 } else {
                     throw new Error('No chart data provided. Use :data, wire:model, or declarative <x-google-chart.column> / <x-google-chart.row> components.');
+                }
+            },
+
+            /**
+             * Inject an HTML tooltip with a mini PieChart breakdown for the
+             * "Other" slice. Renders a hidden chart, captures it as PNG via
+             * getImageURI(), and adds a tooltip role column to the DataTable.
+             *
+             * Requires config.otherBreakdown to be set with shape:
+             *   { label: string, items: Array<[string, number]> }
+             *
+             * No-op if otherBreakdown is absent, has no items, or the chart
+             * type does not support HTML tooltips.
+             */
+            async injectOtherTooltip() {
+                const breakdown = config.otherBreakdown;
+                if (!breakdown?.items?.length || !HTML_TOOLTIP_TYPES.has(config.type)) {
+                    return;
+                }
+
+                // Create an off-screen container for the mini chart render
+                const hiddenDiv = document.createElement('div');
+                hiddenDiv.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:300px;height:200px;';
+                document.body.appendChild(hiddenDiv);
+
+                try {
+                    // Build a DataTable for the mini pie chart
+                    const miniData = new google.visualization.DataTable();
+                    miniData.addColumn('string', 'Label');
+                    miniData.addColumn('number', 'Value');
+                    miniData.addRows(breakdown.items);
+
+                    // Render the mini chart and capture it as a PNG data URI
+                    const miniChart = new google.visualization.PieChart(hiddenDiv);
+                    const pngUri = await new Promise((resolve, reject) => {
+                        google.visualization.events.addOneTimeListener(miniChart, 'ready', () => {
+                            resolve(miniChart.getImageURI());
+                        });
+                        google.visualization.events.addOneTimeListener(miniChart, 'error', (err) => {
+                            reject(new Error(err.message || 'Mini chart render failed'));
+                        });
+                        miniChart.draw(miniData, {
+                            title: '',
+                            legend: { position: 'labeled' },
+                            pieSliceText: 'percentage',
+                            chartArea: { width: '90%', height: '90%' },
+                            backgroundColor: 'transparent',
+                            enableInteractivity: false,
+                            pieSliceTextStyle: { fontSize: 10 },
+                            width: 300,
+                            height: 200,
+                        });
+                    });
+
+                    miniChart.clearChart();
+
+                    // Build the HTML tooltip content with the PNG and item list
+                    let tooltipHtml = '<div style="padding:8px;min-width:280px;">';
+                    tooltipHtml += '<div style="font-weight:bold;margin-bottom:6px;">'
+                        + escapeHtml(breakdown.label) + ' Breakdown</div>';
+                    tooltipHtml += '<img src="' + pngUri
+                        + '" style="width:280px;height:auto;display:block;margin-bottom:6px;" />';
+                    tooltipHtml += '<div style="font-size:12px;line-height:1.4;">';
+
+                    const breakdownTotal = breakdown.items.reduce((sum, item) => sum + item[1], 0);
+                    for (const item of breakdown.items) {
+                        const pct = breakdownTotal > 0
+                            ? ((item[1] / breakdownTotal) * 100).toFixed(1)
+                            : '0.0';
+                        tooltipHtml += '<div>' + escapeHtml(String(item[0]))
+                            + ': ' + escapeHtml(String(item[1]))
+                            + ' (' + pct + '%)</div>';
+                    }
+
+                    tooltipHtml += '</div></div>';
+
+                    // Add a tooltip role column and populate only the "Other" row
+                    this.dataTable.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+                    const tooltipColIndex = this.dataTable.getNumberOfColumns() - 1;
+                    const numRows = this.dataTable.getNumberOfRows();
+
+                    for (let r = 0; r < numRows; r++) {
+                        const label = this.dataTable.getValue(r, 0);
+                        if (label === breakdown.label) {
+                            this.dataTable.setCell(r, tooltipColIndex, tooltipHtml);
+                        }
+                        // null cells → Google Charts auto-generates default tooltip
+                    }
+
+                    // Enable HTML tooltips in chart options
+                    config.options = config.options || {};
+                    config.options.tooltip = Object.assign(config.options.tooltip || {}, { isHtml: true });
+
+                } finally {
+                    document.body.removeChild(hiddenDiv);
                 }
             },
 
@@ -499,15 +624,17 @@
 
             /**
              * Set up Livewire wire:model reactivity.
-             * When the bound property changes, rebuild data and redraw.
+             * When the bound property changes, rebuild data, re-inject
+             * tooltips, and redraw.
              */
             setupWireModel() {
                 if (!config.wireModelProp || !this.$wire) return;
 
-                this.$wire.$watch(config.wireModelProp, (newValue) => {
+                this.$wire.$watch(config.wireModelProp, async (newValue) => {
                     if (newValue && Array.isArray(newValue) && newValue.length > 0) {
                         try {
                             this.dataTable = arrayToDataTable(newValue);
+                            await this.injectOtherTooltip();
                             this.draw();
                         } catch (e) {
                             console.error('[GoogleChartsFlux] Data update error:', e);
@@ -518,12 +645,14 @@
 
             /**
              * Update the chart data programmatically (callable from Alpine/JS).
+             * Re-injects "Other" tooltip if configured.
              *
              * @param {Array} newData - New data as array-of-arrays
              */
-            updateData(newData) {
+            async updateData(newData) {
                 if (newData && Array.isArray(newData) && newData.length > 0) {
                     this.dataTable = arrayToDataTable(newData);
+                    await this.injectOtherTooltip();
                     this.draw();
                 }
             },

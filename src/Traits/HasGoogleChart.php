@@ -34,6 +34,17 @@ use FoleyBridgeSolutions\GoogleChartsFlux\Data\ChartData;
 trait HasGoogleChart
 {
     /**
+     * Breakdown of items grouped into the "Other" slice by groupSmallSlices().
+     *
+     * Populated automatically when groupSmallSlices() absorbs small slices.
+     * Structure: ['label' => string, 'items' => array<int, array{0: string, 1: int|float}>]
+     * Empty array when no grouping occurred.
+     *
+     * Public because Livewire must pass it to the Blade view for JS tooltip rendering.
+     */
+    public array $otherBreakdown = [];
+
+    /**
      * Build a chart data array from headers and rows.
      *
      * @param array<string> $headers Column header labels
@@ -77,6 +88,8 @@ trait HasGoogleChart
         float $threshold = 5.0,
         string $label = 'Other',
     ): array {
+        $this->otherBreakdown = [];
+
         // Need at least a header row + 1 data row
         if (count($data) < 2) {
             return $data;
@@ -103,6 +116,7 @@ trait HasGoogleChart
 
         $otherSum = 0;
         $absorbedLabels = [];
+        $absorbedItems = [];
 
         foreach ($indexed as $row) {
             if ($otherSum + $row[1] > $budget) {
@@ -110,12 +124,18 @@ trait HasGoogleChart
             }
             $otherSum += $row[1];
             $absorbedLabels[] = $row[0];
+            $absorbedItems[] = [$row[0], $row[1]];
         }
 
         // Don't group if fewer than 2 rows absorbed — nothing meaningful to merge
         if (count($absorbedLabels) < 2) {
             return $data;
         }
+
+        $this->otherBreakdown = [
+            'label' => $label,
+            'items' => $absorbedItems,
+        ];
 
         // Build result: keep non-absorbed rows in their original order, append Other
         $absorbedSet = array_flip($absorbedLabels);

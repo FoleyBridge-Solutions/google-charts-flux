@@ -45,19 +45,35 @@ class Chart extends Component
     public ?array $chartData = null;
 
     /**
+     * Breakdown data for the "Other" slice tooltip mini-chart.
+     *
+     * When a pie chart groups small slices into "Other", this provides
+     * the individual items that make up that group, displayed as a
+     * mini-chart inside the tooltip on hover.
+     *
+     * Structure: ['label' => string, 'items' => [[label, value], ...]]
+     *
+     * @var array{label: string, items: array<int, array{0: string, 1: float|int}>}|null
+     */
+    public ?array $otherBreakdown = null;
+
+    /**
      * Create a new chart component instance.
      *
-     * @param string $type         The chart type ('pie', 'bar', 'line', etc.)
-     * @param array|null $data     Chart data as array-of-arrays (first row = headers)
-     * @param string|null $loading Loading placeholder type (null = use config default)
+     * @param string $type                The chart type ('pie', 'bar', 'line', etc.)
+     * @param array|null $data            Chart data as array-of-arrays (first row = headers)
+     * @param array|null $otherBreakdown  Breakdown items for the "Other" slice tooltip mini-chart
+     * @param string|null $loading        Loading placeholder type (null = use config default)
      */
     public function __construct(
         public string $type,
         ?array $data = null,
+        ?array $otherBreakdown = null,
         public ?string $loading = null,
     ) {
         $this->chartType = ChartType::resolve($type);
         $this->chartData = $data;
+        $this->otherBreakdown = $otherBreakdown;
         $this->loading = $loading ?? config('google-charts-flux.loading', 'skeleton');
     }
 
