@@ -155,4 +155,17 @@ return [
 
     'loading' => 'skeleton',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Auto-Inject Assets
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the package automatically injects its JavaScript into
+    | every HTML response before </body>. Set to false if you prefer to
+    | use the @googleChartsFluxScripts directive manually instead.
+    |
+    */
+
+    'inject_assets' => env('GOOGLE_CHARTS_INJECT_ASSETS', true),
+
 ];

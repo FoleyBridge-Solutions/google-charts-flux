@@ -12,13 +12,15 @@ use FoleyBridgeSolutions\GoogleChartsFlux\Components\Event;
 use FoleyBridgeSolutions\GoogleChartsFlux\Components\Options;
 use FoleyBridgeSolutions\GoogleChartsFlux\Components\Row;
 use FoleyBridgeSolutions\GoogleChartsFlux\Components\Series;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 
 /**
  * Service provider for the Google Charts Flux package.
  *
- * Registers Blade components, directives, config, and views.
+ * Registers Blade components, directives, config, views, and
+ * auto-injects the Google Charts script into HTML responses.
  */
 class GoogleChartsFluxServiceProvider extends ServiceProvider
 {
@@ -42,6 +44,7 @@ class GoogleChartsFluxServiceProvider extends ServiceProvider
         $this->registerViews();
         $this->registerComponents();
         $this->registerBladeDirectives();
+        $this->registerAutoInjection();
     }
 
     /**
@@ -100,13 +103,73 @@ class GoogleChartsFluxServiceProvider extends ServiceProvider
      * Register Blade directives for the package.
      *
      * @googleChartsFluxScripts — Outputs the Google Charts loader script
-     * and the Alpine.js component registration. Place this in your layout
-     * before the closing </body> tag, after @fluxScripts / @livewireScripts.
+     * and the Alpine.js component registration. Can be used manually
+     * if auto-injection is disabled. Otherwise, scripts are injected
+     * automatically before </body> on all HTML responses.
      */
     protected function registerBladeDirectives(): void
     {
         Blade::directive('googleChartsFluxScripts', function () {
             return "<?php echo view('google-chart::scripts')->render(); ?>";
         });
+    }
+
+    /**
+     * Auto-inject the Google Charts script into HTML responses.
+     *
+     * Hooks into Laravel's RequestHandled event (same pattern as
+     * Livewire's SupportAutoInjectedAssets) to inject the script
+     * tag before </body> on all successful HTML responses.
+     *
+     * Can be disabled by setting 'google-charts-flux.inject_assets'
+     * to false in config.
+     */
+    protected function registerAutoInjection(): void
+    {
+        $this->app['events']->listen(RequestHandled::class, function (RequestHandled $handled) {
+            if (config('google-charts-flux.inject_assets', true) === false) {
+                return;
+            }
+
+            // Only inject into successful HTML responses
+            $contentType = $handled->response->headers->get('content-type', '');
+            if (! str_contains($contentType, 'text/html')) {
+                return;
+            }
+            if (! method_exists($handled->response, 'status') || $handled->response->status() !== 200) {
+                return;
+            }
+
+            $html = $handled->response->getContent();
+            if ($html === false || ! str_contains($html, '</body>')) {
+                return;
+            }
+
+            // Don't double-inject if @googleChartsFluxScripts was used manually
+            if (str_contains($html, '/* google-charts-flux */')) {
+                return;
+            }
+
+            $scriptTag = $this->buildScriptTag();
+
+            $originalContent = $handled->response->original;
+            $handled->response->setContent(
+                preg_replace('/(<\s*\/\s*body\s*>)/i', $scriptTag . '$1', $html, 1)
+            );
+            $handled->response->original = $originalContent;
+        });
+    }
+
+    /**
+     * Build the inline <script> tag containing the Google Charts Flux JS.
+     *
+     * @return string
+     */
+    protected function buildScriptTag(): string
+    {
+        $jsPath = __DIR__ . '/../resources/js/google-charts-flux.js';
+        $js = file_get_contents($jsPath);
+
+        return "\n<script>/* google-charts-flux */" . $js . "</script>\n";
     }
 }
