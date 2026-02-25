@@ -34,17 +34,6 @@ use FoleyBridgeSolutions\GoogleChartsFlux\Data\ChartData;
 trait HasGoogleChart
 {
     /**
-     * Breakdown of items grouped into the "Other" slice by groupSmallSlices().
-     *
-     * Populated automatically when groupSmallSlices() absorbs small slices.
-     * Structure: ['label' => string, 'items' => array<int, array{0: string, 1: int|float}>]
-     * Empty array when no grouping occurred.
-     *
-     * Public because Livewire must pass it to the Blade view for JS tooltip rendering.
-     */
-    public array $otherBreakdown = [];
-
-    /**
      * Build a chart data array from headers and rows.
      *
      * @param array<string> $headers Column header labels
@@ -88,8 +77,6 @@ trait HasGoogleChart
         float $threshold = 5.0,
         string $label = 'Other',
     ): array {
-        $this->otherBreakdown = [];
-
         // Need at least a header row + 1 data row
         if (count($data) < 2) {
             return $data;
@@ -132,11 +119,6 @@ trait HasGoogleChart
             return $data;
         }
 
-        $this->otherBreakdown = [
-            'label' => $label,
-            'items' => $absorbedItems,
-        ];
-
         // Build result: keep non-absorbed rows in their original order, append Other
         $absorbedSet = array_flip($absorbedLabels);
         $keep = [];
@@ -149,7 +131,16 @@ trait HasGoogleChart
 
         $keep[] = [$label, $otherSum];
 
-        return array_merge([$header], $keep);
+        $result = array_merge([$header], $keep);
+
+        // Embed breakdown metadata in the data array under a non-numeric key.
+        // Chart.php auto-extracts this before serializing data to JS.
+        $result['_otherBreakdown'] = [
+            'label' => $label,
+            'items' => $absorbedItems,
+        ];
+
+        return $result;
     }
 
     /**

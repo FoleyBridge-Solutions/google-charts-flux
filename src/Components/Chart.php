@@ -60,20 +60,27 @@ class Chart extends Component
     /**
      * Create a new chart component instance.
      *
-     * @param string $type                The chart type ('pie', 'bar', 'line', etc.)
-     * @param array|null $data            Chart data as array-of-arrays (first row = headers)
-     * @param array|null $otherBreakdown  Breakdown items for the "Other" slice tooltip mini-chart
-     * @param string|null $loading        Loading placeholder type (null = use config default)
+     * @param string $type         The chart type ('pie', 'bar', 'line', etc.)
+     * @param array|null $data     Chart data as array-of-arrays (first row = headers)
+     * @param string|null $loading Loading placeholder type (null = use config default)
      */
     public function __construct(
         public string $type,
         ?array $data = null,
-        ?array $otherBreakdown = null,
         public ?string $loading = null,
     ) {
         $this->chartType = ChartType::resolve($type);
+
+        // Auto-extract _otherBreakdown metadata embedded by groupSmallSlices().
+        // This must happen BEFORE storing $chartData so the data array remains
+        // a clean numeric-indexed array that json_encode serializes as a JS array.
+        if ($data !== null && array_key_exists('_otherBreakdown', $data)) {
+            $this->otherBreakdown = $data['_otherBreakdown'];
+            unset($data['_otherBreakdown']);
+            $data = array_values($data);
+        }
+
         $this->chartData = $data;
-        $this->otherBreakdown = $otherBreakdown;
         $this->loading = $loading ?? config('google-charts-flux.loading', 'skeleton');
     }
 
