@@ -224,10 +224,18 @@
             _drawTimeout: null,
 
             /**
-             * Initialize the chart: load Google Charts, build data, render.
+             * Initialize the chart: parse sub-components, load Google Charts,
+             * build data, and render.
+             *
+             * Called automatically by Alpine (x-data auto-init). Do NOT call
+             * from x-init — Alpine handles this.
              */
             async init() {
                 try {
+                    // Parse declarative sub-component <template> elements
+                    // before loading the chart library or building data.
+                    this.parseSubComponents();
+
                     await GoogleChartsLoader.load(config.loaderConfig);
                     this.buildDataTable();
                     this.createChart();
@@ -240,6 +248,40 @@
                     this.error = e.message;
                     console.error('[GoogleChartsFlux] Initialization error:', e);
                 }
+            },
+
+            /**
+             * Parse child <template> elements rendered by sub-components
+             * (options, column, row, event, series, axis) and merge their
+             * configuration into the config closure.
+             */
+            parseSubComponents() {
+                const el = this.$el;
+
+                el.querySelectorAll('template[data-gcf-options]').forEach(t => {
+                    const parsed = JSON.parse(t.dataset.gcfOptions);
+                    config.options = { ...config.options, ...parsed };
+                });
+
+                el.querySelectorAll('template[data-gcf-column]').forEach(t => {
+                    config.columns.push(JSON.parse(t.dataset.gcfColumn));
+                });
+
+                el.querySelectorAll('template[data-gcf-row]').forEach(t => {
+                    config.rows.push(JSON.parse(t.dataset.gcfRow));
+                });
+
+                el.querySelectorAll('template[data-gcf-event]').forEach(t => {
+                    config.events.push(JSON.parse(t.dataset.gcfEvent));
+                });
+
+                el.querySelectorAll('template[data-gcf-series]').forEach(t => {
+                    config.seriesConfig.push(JSON.parse(t.dataset.gcfSeries));
+                });
+
+                el.querySelectorAll('template[data-gcf-axis]').forEach(t => {
+                    config.axisConfig.push(JSON.parse(t.dataset.gcfAxis));
+                });
             },
 
             /**

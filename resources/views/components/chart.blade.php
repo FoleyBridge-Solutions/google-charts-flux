@@ -1,21 +1,12 @@
-@props([
-    'type',
-    'data' => null,
-    'loading' => 'skeleton',
-])
-
 @php
     // Extract wire:model from attributes if present
     $wireModelProp = null;
-    $wireAttributes = $attributes->whereStartsWith('wire:model');
+    $wireAttributes = $attributes->whereStartsWith('wire:model')->getAttributes();
     foreach ($wireAttributes as $key => $value) {
         $wireModelProp = $value ?: $key;
         break;
     }
 
-    // Collect sub-component configuration from the slot content
-    // Sub-components render hidden <template> elements with data-* attributes
-    // that the Alpine component reads during initialization.
     $chartId = 'gcf-' . uniqid();
 @endphp
 
@@ -23,7 +14,7 @@
     id="{{ $chartId }}"
     x-data="googleChart({
         type: @js($type),
-        data: @js($data),
+        data: @js($chartData),
         options: {},
         defaults: @js($defaultOptions()),
         darkOptions: @js($darkOptions()),
@@ -36,39 +27,13 @@
         wireModelProp: @js($wireModelProp),
         loading: @js($loading),
     })"
-    x-init="
-        // Parse sub-component configuration from child <template> elements
-        const el = $el;
-        el.querySelectorAll('template[data-gcf-options]').forEach(t => {
-            const parsed = JSON.parse(t.dataset.gcfOptions);
-            Object.assign($data.options ?? {}, $data.options = { ...$data.options, ...parsed });
-        });
-        el.querySelectorAll('template[data-gcf-column]').forEach(t => {
-            $data.columns.push(JSON.parse(t.dataset.gcfColumn));
-        });
-        el.querySelectorAll('template[data-gcf-row]').forEach(t => {
-            $data.rows.push(JSON.parse(t.dataset.gcfRow));
-        });
-        el.querySelectorAll('template[data-gcf-event]').forEach(t => {
-            $data.events.push(JSON.parse(t.dataset.gcfEvent));
-        });
-        el.querySelectorAll('template[data-gcf-series]').forEach(t => {
-            $data.seriesConfig.push(JSON.parse(t.dataset.gcfSeries));
-        });
-        el.querySelectorAll('template[data-gcf-axis]').forEach(t => {
-            $data.axisConfig.push(JSON.parse(t.dataset.gcfAxis));
-        });
-
-        // Initialize the chart
-        init();
-    "
     x-on:google-chart-update.window="
         if ($event.detail.chartId === '{{ $chartId }}') {
             updateData($event.detail.data);
         }
     "
     wire:ignore.self
-    {{ $attributes->except(collect($wireAttributes->keys())->all())->merge(['class' => 'relative']) }}
+    {{ $attributes->except(array_keys($wireAttributes))->merge(['class' => 'relative']) }}
 >
     {{-- Sub-component slot (renders hidden <template> elements) --}}
     {{ $slot }}

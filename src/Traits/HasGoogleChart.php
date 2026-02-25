@@ -62,6 +62,77 @@ trait HasGoogleChart
     }
 
     /**
+     * Group small slices below a percentage threshold into a single "Other" row.
+     *
+     * Useful for pie/donut charts where many tiny slices clutter the display.
+     * Only groups when there are 2+ small rows — a single small row is kept as-is.
+     *
+     * @param array<int, array<mixed>> $data Chart data in array-of-arrays format (first row = headers)
+     * @param float $threshold Percentage threshold (0–100). Rows below this % of total are grouped.
+     * @param string $label Label for the grouped row
+     * @return array<int, array<mixed>> Chart data with small rows merged into one
+     */
+    protected function groupSmallSlices(
+        array $data,
+        float $threshold = 5.0,
+        string $label = 'Other',
+    ): array {
+        // Need at least a header row + 1 data row
+        if (count($data) < 2) {
+            return $data;
+        }
+
+        $header = $data[0];
+        $rows = array_slice($data, 1);
+
+        // Sum all values (column index 1)
+        $total = array_sum(array_column($rows, 1));
+
+        if ($total <= 0) {
+            return $data;
+        }
+
+        // "Other budget" algorithm: threshold controls the max % the Other
+        // group can occupy. Greedily absorb the smallest slices first until
+        // adding the next one would exceed the budget.
+        $budget = ($threshold / 100) * $total;
+
+        // Sort by value ascending (smallest first), preserving original keys
+        $indexed = $rows;
+        usort($indexed, fn (array $a, array $b) => $a[1] <=> $b[1]);
+
+        $otherSum = 0;
+        $absorbedLabels = [];
+
+        foreach ($indexed as $row) {
+            if ($otherSum + $row[1] > $budget) {
+                break;
+            }
+            $otherSum += $row[1];
+            $absorbedLabels[] = $row[0];
+        }
+
+        // Don't group if fewer than 2 rows absorbed — nothing meaningful to merge
+        if (count($absorbedLabels) < 2) {
+            return $data;
+        }
+
+        // Build result: keep non-absorbed rows in their original order, append Other
+        $absorbedSet = array_flip($absorbedLabels);
+        $keep = [];
+
+        foreach ($rows as $row) {
+            if (! isset($absorbedSet[$row[0]])) {
+                $keep[] = $row;
+            }
+        }
+
+        $keep[] = [$label, $otherSum];
+
+        return array_merge([$header], $keep);
+    }
+
+    /**
      * Build chart data from an iterable collection.
      *
      * @param iterable<mixed> $collection The source data

@@ -33,18 +33,31 @@ class Chart extends Component
     public ChartType $chartType;
 
     /**
+     * Chart data as array-of-arrays (first row = headers).
+     *
+     * Note: "data" is a reserved keyword in Laravel Blade components
+     * and cannot be a public property name. We accept it as a constructor
+     * parameter (which maps to the :data HTML attribute) and store it
+     * in this non-reserved public property for use in the Blade view.
+     *
+     * @var array<int, array<mixed>>|null
+     */
+    public ?array $chartData = null;
+
+    /**
      * Create a new chart component instance.
      *
-     * @param string $type       The chart type ('pie', 'bar', 'line', etc.)
-     * @param array|null $data   Chart data as array-of-arrays (first row = headers)
+     * @param string $type         The chart type ('pie', 'bar', 'line', etc.)
+     * @param array|null $data     Chart data as array-of-arrays (first row = headers)
      * @param string|null $loading Loading placeholder type (null = use config default)
      */
     public function __construct(
         public string $type,
-        public ?array $data = null,
+        ?array $data = null,
         public ?string $loading = null,
     ) {
         $this->chartType = ChartType::resolve($type);
+        $this->chartData = $data;
         $this->loading = $loading ?? config('google-charts-flux.loading', 'skeleton');
     }
 
